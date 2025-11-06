@@ -11,11 +11,11 @@ export default function Profile() {
   const handleLogout = () => {
     localStorage.removeItem('auth_token')
     logout()
-    router.push('/')
+    router.push('/cook')
   }
 
   if (!user) {
-    router.push('/login')
+    router.push('/cook/login')
     return null
   }
 

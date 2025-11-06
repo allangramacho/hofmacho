@@ -9,16 +9,37 @@ module.exports = {
     extend: {
       colors: {
         primary: {
-          50: '#fdf2f8',
-          100: '#fce7f3',
-          200: '#fbcfe8',
-          300: '#f9a8d4',
-          400: '#f48fb8',
-          500: '#f17ba8',
-          600: '#e06b98',
-          700: '#c85a85',
-          800: '#a84d6f',
-          900: '#8a4059',
+          50: '#f5e8e0',
+          100: '#ebd1c1',
+          200: '#d7a383',
+          300: '#c37545',
+          400: '#B85C38', // Primary - warm terracotta
+          500: '#a64f2e',
+          600: '#944225',
+          700: '#82351c',
+          800: '#702813',
+          900: '#5e1b0a',
+        },
+        accent: {
+          50: '#fef9f0',
+          100: '#fdf3e1',
+          200: '#fbe7c3',
+          300: '#f9dba5',
+          400: '#F6C28B', // Accent - buttery beige
+          500: '#f4b66d',
+          600: '#f2aa4f',
+          700: '#f09e31',
+          800: '#ee9213',
+          900: '#ec8600',
+        },
+        background: {
+          DEFAULT: '#FFF9F4', // Off-white parchment
+        },
+        text: {
+          DEFAULT: '#3B2F2F', // Dark brown text
+        },
+        highlight: {
+          DEFAULT: '#D9A441', // Honey gold
         },
       },
     },

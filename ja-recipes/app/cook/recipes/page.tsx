@@ -121,7 +121,7 @@ export default function RecipesPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-8">
+      <div className="mb-8 hidden md:block">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Browse Recipes</h1>
         <p className="text-gray-600">Discover amazing recipes from our community</p>
       </div>

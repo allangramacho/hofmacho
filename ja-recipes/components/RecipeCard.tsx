@@ -94,7 +94,7 @@ export default function RecipeCard({ recipe, onDelete }: RecipeCardProps) {
 
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
-      <Link href={`/recipes/${recipe.id}`}>
+      <Link href={`/cook/recipes/${recipe.id}`}>
         <div className="relative h-48 bg-gray-200">
           {recipe.image ? (
             <img
@@ -116,7 +116,7 @@ export default function RecipeCard({ recipe, onDelete }: RecipeCardProps) {
       </Link>
 
       <div className="p-4">
-        <Link href={`/recipes/${recipe.id}`}>
+        <Link href={`/cook/recipes/${recipe.id}`}>
           <h3 className="text-xl font-semibold text-gray-900 mb-2 hover:text-primary-600 transition">
             {recipe.title}
           </h3>
@@ -149,7 +149,7 @@ export default function RecipeCard({ recipe, onDelete }: RecipeCardProps) {
           {user && user.id === recipe.authorId && (
             <div className="flex items-center space-x-2">
               <Link
-                href={`/recipes/${recipe.id}/edit`}
+                href={`/cook/recipes/${recipe.id}/edit`}
                 className="text-primary-600 hover:text-primary-700 p-1"
                 onClick={(e) => e.stopPropagation()}
               >

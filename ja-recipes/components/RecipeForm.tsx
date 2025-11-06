@@ -27,7 +27,7 @@ export default function RecipeForm() {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      router.push('/login')
+      router.push('/cook/login')
       return
     }
 
@@ -82,7 +82,7 @@ export default function RecipeForm() {
       const data = await response.json()
 
       if (response.ok) {
-        router.push(`/recipes/${data.recipe?.id || recipeId}`)
+        router.push(`/cook/recipes/${data.recipe?.id || recipeId}`)
       } else {
         alert(data.message || 'Failed to save recipe')
       }

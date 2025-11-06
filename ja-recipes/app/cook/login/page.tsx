@@ -39,7 +39,7 @@ export default function Login() {
           email: data.user?.email || formData.email,
           name: data.user?.name || 'User',
         })
-        router.push('/recipes')
+        router.push('/cook/recipes')
       } else {
         setError(data.message || 'Login failed. Please check your credentials.')
       }
@@ -60,7 +60,7 @@ export default function Login() {
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
             Or{' '}
-            <Link href="/register" className="font-medium text-primary-600 hover:text-primary-500">
+            <Link href="/cook/register" className="font-medium text-primary-600 hover:text-primary-500">
               create a new account
             </Link>
           </p>

@@ -45,7 +45,7 @@ export default function RecipeDetail() {
       })
 
       if (response.ok) {
-        router.push('/recipes')
+        router.push('/cook/recipes')
       }
     } catch (error) {
       console.error('Error deleting recipe:', error)
@@ -86,7 +86,7 @@ export default function RecipeDetail() {
         <div className="text-center">
           <p className="text-gray-600 text-lg">Recipe not found</p>
           <button
-            onClick={() => router.push('/recipes')}
+            onClick={() => router.push('/cook/recipes')}
             className="mt-4 text-primary-600 hover:text-primary-700"
           >
             Back to Recipes
@@ -145,7 +145,7 @@ export default function RecipeDetail() {
               {user && user.id === recipe.authorId && (
                 <div className="flex items-center space-x-2">
                   <button
-                    onClick={() => router.push(`/recipes/${recipe.id}/edit`)}
+                    onClick={() => router.push(`/cook/recipes/${recipe.id}/edit`)}
                     className="text-primary-600 hover:text-primary-700 p-2"
                   >
                     <FiEdit size={20} />

@@ -1,59 +1,40 @@
 'use client'
 
 import Link from 'next/link'
-import { FiCoffee, FiSearch, FiPlusCircle } from 'react-icons/fi'
 
-export default function Home() {
+export default function LandingPage() {
   return (
-    <div className="min-h-screen">
-      {/* Hero Section */}
-      <section className="bg-primary-500 text-white py-20 px-4">
-        <div className="max-w-7xl mx-auto text-center">
-          <div className="flex justify-center mb-6">
-            <FiCoffee size={64} />
-          </div>
-          <h1 className="text-4xl md:text-6xl font-bold mb-6">
-            Welcome to J&A Recipes
-          </h1>
-          <p className="text-xl md:text-2xl mb-8 text-white">
-            Share your favorite family recipes and discover new ones
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link
-              href="/recipes"
-              className="bg-white text-primary-600 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition flex items-center justify-center space-x-2"
-            >
-              <FiSearch />
-              <span>Browse Recipes</span>
-            </Link>
-            <Link
-              href="/register"
-              className="bg-primary-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-primary-700 transition flex items-center justify-center space-x-2"
-            >
-              <FiPlusCircle />
-              <span>Get Started</span>
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Simple CTA Section */}
-      <section className="bg-gray-50 py-16 px-4">
-        <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-3xl font-bold mb-4 text-gray-900">
-            Start Sharing Your Recipes
-          </h2>
-          <p className="text-xl text-gray-600 mb-8">
-            Join our family recipe collection and share your favorite dishes
-          </p>
+    <div className="min-h-screen bg-background flex items-center justify-center px-4">
+      <div className="max-w-4xl mx-auto text-center">
+        <h1 className="text-5xl md:text-6xl font-bold text-text mb-4">
+          Welcome to Hofmacho
+        </h1>
+        <p className="text-xl text-text/70 mb-12">
+          Choose a site to explore
+        </p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Link
-            href="/register"
-            className="inline-block bg-primary-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-primary-700 transition"
+            href="/cook"
+            className="bg-primary-400 hover:bg-primary-500 text-white px-8 py-12 rounded-lg shadow-lg hover:shadow-xl transition-all transform hover:scale-105"
           >
-            Create Free Account
+            <div className="text-5xl mb-4">🍳</div>
+            <h2 className="text-2xl font-bold mb-2">J&A Recipes</h2>
+            <p className="text-white/90">
+              Share and discover family recipes
+            </p>
           </Link>
+          
+          {/* Placeholder for future sites */}
+          <div className="bg-accent-200 px-8 py-12 rounded-lg shadow-lg opacity-50 cursor-not-allowed">
+            <div className="text-5xl mb-4">🚧</div>
+            <h2 className="text-2xl font-bold mb-2 text-text/60">Coming Soon</h2>
+            <p className="text-text/50">
+              More sites coming soon
+            </p>
+          </div>
         </div>
-      </section>
+      </div>
     </div>
   )
 }

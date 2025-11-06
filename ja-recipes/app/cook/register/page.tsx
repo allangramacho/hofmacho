@@ -56,7 +56,7 @@ export default function Register() {
           email: data.user?.email || formData.email,
           name: data.user?.name || formData.name,
         })
-        router.push('/recipes')
+        router.push('/cook/recipes')
       } else {
         setError(data.message || 'Registration failed. Please try again.')
       }
@@ -77,7 +77,7 @@ export default function Register() {
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
             Or{' '}
-            <Link href="/login" className="font-medium text-primary-600 hover:text-primary-500">
+            <Link href="/cook/login" className="font-medium text-primary-600 hover:text-primary-500">
               sign in to your existing account
             </Link>
           </p>
