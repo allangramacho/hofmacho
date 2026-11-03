@@ -1,5 +1,5 @@
 name: Family Recipes
-version: "0.1.0"
+version: "0.1.1"
 slug: family_recipes
 description: A private recipe collection for Home Assistant users.
 arch:
@@ -12,6 +12,6 @@ panel_icon: mdi:book-open-variant
 panel_title: Family Recipes
 panel_admin: false
 options:
-  initial_admin_id: "REDACTED"
+  initial_admin_id: null
 schema:
   initial_admin_id: str(1,128)

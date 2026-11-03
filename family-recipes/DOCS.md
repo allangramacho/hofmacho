@@ -17,7 +17,7 @@ Alternatively, after the changes are committed and pushed to a GitHub repository
 ## First administrator
 
 1. In Home Assistant, open **Settings > People > Users** and select the `hofmacho` account. Enable Advanced Mode on your profile if the Users tab is hidden. Copy the account's **ID**, not its username or a long-lived access token.
-2. Open the Family Recipes app's **Configuration** tab. Set `initial_admin_id` to that ID, save, and start or restart the app.
+2. Open the Family Recipes app's **Configuration** tab. Set `initial_admin_id` to that ID, save, and start or restart the app. This required setting is stored by Home Assistant on your HAOS installation; it has no default in the repository.
 3. Open the web UI from the app page, or enable its sidebar entry. `hofmacho` must be signed into Home Assistant when opening it. The app reads the authenticated user ID from Supervisor ingress; it does not ask for a second password.
 4. Open **Admin > Users > Allow user**. Enter each family member's Home Assistant user ID and a display name. Users must already have Home Assistant accounts. The displayed name may update from the identity supplied by Home Assistant when a user opens the app.
 
