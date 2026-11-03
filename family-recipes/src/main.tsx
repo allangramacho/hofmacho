@@ -10,6 +10,7 @@ type Recipe = {
   id: string; owner_id: string; owner: string; title: string; description: string;
   ingredients: string; instructions: string; tags: Item[]; categories: Item[]; images: Image[];
   likes: number; liked: boolean; comments: Comment[]; updated_at: string;
+  cookidoo?: { remote_id: string | null; state: "working" | "ready" | "attention"; scheduled_day: string | null };
 };
 type RecipeForm = { title: string; description: string; ingredients: string; instructions: string; tags: string[]; categories: string[] };
 type Data = { tags: Item[]; categories: Item[] };
@@ -43,16 +44,19 @@ function App() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [comment, setComment] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [cookidooConfigured, setCookidooConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
   const refresh = async () => {
-    const [me, all, groups] = await Promise.all([api<User>("me"), api<Recipe[]>("recipes"), api<Data>("taxonomy")]);
+    const [me, all, groups, cookidoo] = await Promise.all([api<User>("me"), api<Recipe[]>("recipes"), api<Data>("taxonomy"), api<{ configured: boolean }>("cookidoo")]);
     setUser(me); setRecipes(all); setTaxonomy(groups);
+    setCookidooConfigured(cookidoo.configured);
     if (me.role === "admin") setUsers(await api<User[]>("admin/users"));
   };
   const run = async (action: () => Promise<void>) => {
-    setError(""); setBusy(true);
+    setError(""); setNotice(""); setBusy(true);
     try { await action(); } catch (e) { setError(e instanceof Error ? e.message : "Something went wrong"); }
     finally { setBusy(false); }
   };
@@ -102,6 +106,7 @@ function App() {
     </header>
     <main>
       {error && <div className="alert" role="alert">{error}<button onClick={() => setError("")} aria-label="Dismiss error">×</button></div>}
+      {notice && <div className="panel" role="status">{notice}</div>}
       {loading ? <p>Loading recipes…</p> : !user ? <div className="empty"><h1>Access unavailable</h1><p>Open this app through Home Assistant and ask an app administrator for access.</p></div> : <>
         {screen === "list" && <>
           <section className="hero"><div><p className="eyebrow">YOUR FAMILY COOKBOOK</p><h1>Good food, shared together.</h1><p>Keep your favorite recipes close, from everyday meals to family classics.</p></div><button className="primary" onClick={() => showEdit()}>+ Add recipe</button></section>
@@ -127,6 +132,48 @@ function App() {
             if (file) void run(async () => { const data = new FormData(); data.append("image", file); await updateRecipe(`recipes/${selected.id}/images`, "POST", data); });
           }} /><small>JPEG, PNG or WebP · up to 5 MB each, 5 photos</small></label>}
           <div className="recipe-columns"><section className="panel"><h2>Ingredients</h2><p className="multiline">{selected.ingredients}</p></section><section className="panel"><h2>Method</h2><p className="multiline">{selected.instructions}</p></section></div>
+          <section className="panel">
+            <h2>Cookidoo · TM6</h2>
+            <p>Send the current ingredients and one instruction per line to the shared Cookidoo account for today. This replaces the linked Cookidoo recipe's ingredients and instructions. Photos are not sent.</p>
+            <p>Steps are text only: no timer, temperature or speed is set automatically. Check the recipe and operate the TM6 manually.</p>
+            {!cookidooConfigured && <p>Ask an administrator to configure the Cookidoo session in Home Assistant.</p>}
+            {selected.cookidoo && selected.cookidoo.state !== "ready" && <p role="alert">This Cookidoo operation needs administrator review. Check the created recipe and calendar in Cookidoo before retrying.</p>}
+            {selected.cookidoo?.scheduled_day && <p>Last sent for {selected.cookidoo.scheduled_day}; check Cookidoo for its current calendar.</p>}
+            <div className="actions">
+              <button disabled={busy || !cookidooConfigured || Boolean(selected.cookidoo && selected.cookidoo.state !== "ready")} onClick={() => {
+                if (!window.confirm("Send this recipe to the shared Cookidoo account for today? The linked Cookidoo recipe will be overwritten.")) return;
+                void run(async () => {
+                  const now = new Date();
+                  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+                  try {
+                    await api(`recipes/${selected.id}/cookidoo`, "POST", { day });
+                  } catch (error) {
+                    await open(selected.id);
+                    throw error;
+                  }
+                  await open(selected.id); await refresh();
+                  setNotice(`Cookidoo confirmed this recipe for ${day}. Check it on your TM6 before cooking.`);
+                });
+              }}>Send to Cookidoo for today</button>
+              {user.role === "admin" && selected.cookidoo && selected.cookidoo.state !== "ready" && <button disabled={busy} onClick={() => {
+                if (!window.confirm("Have you checked Cookidoo for the recipe and calendar entry? Continue only if it is safe to retry; this can create duplicates.")) return;
+                void run(() => updateRecipe(`admin/cookidoo/recipes/${selected.id}/reset`, "POST", { forget: false }));
+              }}>Review complete: allow retry</button>}
+              {user.role === "admin" && selected.cookidoo && selected.cookidoo.state !== "ready" && !selected.cookidoo.remote_id && <button disabled={busy} onClick={() => {
+                const remoteId = window.prompt("Enter the ID of the matching created recipe in Cookidoo. Retrying will overwrite its ingredients and instructions.");
+                if (remoteId === null) return;
+                void run(() => updateRecipe(`admin/cookidoo/recipes/${selected.id}/link`, "POST", { remoteId }));
+              }}>Link existing Cookidoo recipe</button>}
+              {user.role === "admin" && selected.cookidoo?.state === "ready" && selected.cookidoo.scheduled_day && <button disabled={busy} onClick={() => {
+                if (!window.confirm("Have you checked Cookidoo and resolved the existing calendar entry? Allowing a repeat send may create a duplicate.")) return;
+                void run(() => updateRecipe(`admin/cookidoo/recipes/${selected.id}/reset`, "POST", { forget: false }));
+              }}>Allow scheduling again</button>}
+              {user.role === "admin" && selected.cookidoo && <button disabled={busy} onClick={() => {
+                if (!window.confirm("Forget the local Cookidoo link? The Cookidoo recipe will not be deleted; sending again may create a duplicate.")) return;
+                void run(() => updateRecipe(`admin/cookidoo/recipes/${selected.id}/reset`, "POST", { forget: true }));
+              }}>Forget Cookidoo link</button>}
+            </div>
+          </section>
           {selected.tags.length > 0 && <div className="chips">{selected.tags.map((tag) => <span key={tag.id}>#{tag.name}</span>)}</div>}
           <section className="panel comments"><h2>Comments ({selected.comments.length})</h2>
             {selected.comments.map((item) => <article key={item.id}><strong>{item.author}</strong><p className="multiline">{item.text}</p>{(item.author_id === user.id || user.role === "admin") && <div className="actions"><button onClick={() => { const text = window.prompt("Edit comment", item.text); if (text !== null) void run(() => updateRecipe(`comments/${item.id}`, "PUT", { text })); }}>Edit</button><button onClick={() => { if (window.confirm("Delete this comment?")) void run(() => updateRecipe(`comments/${item.id}`, "DELETE")); }}>Delete</button></div>}</article>)}
@@ -138,7 +185,7 @@ function App() {
             <label>Recipe title<input required maxLength={160} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label>
             <label>Description<textarea maxLength={4000} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
             <label>Ingredients <small>One per line</small><textarea required rows={8} maxLength={20000} value={form.ingredients} onChange={(e) => setForm({ ...form, ingredients: e.target.value })} /></label>
-            <label>Instructions<textarea required rows={10} maxLength={30000} value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} /></label>
+            <label>Instructions <small>For Cookidoo, put each step on a separate line.</small><textarea required rows={10} maxLength={30000} value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} /></label>
             {(["categories", "tags"] as const).map((kind) => <fieldset key={kind}><legend>{kind === "categories" ? "Categories" : "Tags"}</legend><div className="check-list">{taxonomy[kind].length ? taxonomy[kind].map((item) => <label key={item.id}><input type="checkbox" checked={form[kind].includes(item.id)} onChange={() => changeSelection(kind, item.id)} /> {item.name}</label>) : <small>An administrator can add {kind}.</small>}</div></fieldset>)}
             <button className="primary" disabled={busy}>Save recipe</button>
           </form>

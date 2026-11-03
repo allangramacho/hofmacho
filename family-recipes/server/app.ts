@@ -6,13 +6,15 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import sharp from "sharp";
 import { z, ZodError } from "zod";
+import { CookidooError, createCookidoo } from "./cookidoo.js";
 
 type User = { id: string; name: string; role: "admin" | "member"; enabled: number };
 type Recipe = { id: string; owner_id: string; title: string; description: string; ingredients: string; instructions: string; created_at: string; updated_at: string };
 type Image = { id: string; recipe_id: string; filename: string; is_cover: number };
 type Taxonomy = { id: string; name: string };
 type Comment = { id: string; recipe_id: string; author_id: string; text: string; created_at: string; author: string };
-type AppOptions = { dataDir: string; initialAdminId: string; trustedAddress?: string; staticDir?: string };
+type AppOptions = { dataDir: string; initialAdminId: string; trustedAddress?: string; staticDir?: string; cookidooCookie?: string; cookidooFetch?: typeof fetch };
+type CookidooExport = { remote_id: string | null; state: "working" | "ready" | "attention"; scheduled_day: string | null };
 
 const userId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const uuid = z.uuid();
@@ -27,6 +29,7 @@ const recipeInput = z.object({
 const taxonomyInput = z.object({ name: z.string().trim().min(1).max(80) });
 const userInput = z.object({ id: userId, name: z.string().trim().min(1).max(100), role: z.enum(["admin", "member"]), enabled: z.boolean() });
 const commentInput = z.object({ text: z.string().trim().min(1).max(4000) });
+const cookidooDay = z.object({ day: z.iso.date() });
 
 class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -54,10 +57,23 @@ export function createApp(options: AppOptions) {
     CREATE TABLE IF NOT EXISTS images (id TEXT PRIMARY KEY, recipe_id TEXT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE, filename TEXT NOT NULL UNIQUE, is_cover INTEGER NOT NULL DEFAULT 0 CHECK(is_cover IN (0,1)));
   `);
   const version = db.prepare("SELECT version FROM schema_version").get() as { version: number };
-  if (version.version !== 1) throw new Error(`Unsupported database version: ${version.version}`);
+  if (version.version !== 1 && version.version !== 2) throw new Error(`Unsupported database version: ${version.version}`);
+  if (version.version === 1) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec("CREATE TABLE IF NOT EXISTS cookidoo_exports (recipe_id TEXT PRIMARY KEY REFERENCES recipes(id) ON DELETE CASCADE, remote_id TEXT, state TEXT NOT NULL CHECK(state IN ('working','ready','attention')), scheduled_day TEXT)");
+      db.exec("UPDATE schema_version SET version=2");
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
   db.prepare("INSERT INTO users (id, name, role, enabled) VALUES (?, ?, 'admin', 1) ON CONFLICT(id) DO UPDATE SET role='admin', enabled=1").run(options.initialAdminId, "Initial administrator");
 
   const app = express();
+  const cookidoo = options.cookidooCookie ? createCookidoo(options.cookidooCookie, options.cookidooFetch) : undefined;
+  const cookidooInFlight = new Set<string>();
   app.disable("x-powered-by");
   app.use((req, res, next) => {
     const remote = req.socket.remoteAddress?.replace(/^::ffff:/, "");
@@ -108,6 +124,7 @@ export function createApp(options: AppOptions) {
     likes: (db.prepare("SELECT COUNT(*) AS count FROM likes WHERE recipe_id = ?").get(recipe.id) as { count: number }).count,
     liked: Boolean(db.prepare("SELECT 1 FROM likes WHERE recipe_id = ? AND user_id = ?").get(recipe.id, user.id)),
     comments: db.prepare("SELECT comments.*, users.name AS author FROM comments JOIN users ON users.id = comments.author_id WHERE recipe_id = ? ORDER BY created_at, comments.rowid").all(recipe.id) as Comment[],
+    cookidoo: db.prepare("SELECT remote_id, state, scheduled_day FROM cookidoo_exports WHERE recipe_id = ?").get(recipe.id) as CookidooExport | undefined,
   });
   const updateRelations = (recipeId: string, value: z.infer<typeof recipeInput>) => {
     for (const [table, column, ids] of [["recipe_tags", "tag_id", value.tags], ["recipe_categories", "category_id", value.categories]] as const) {
@@ -122,6 +139,72 @@ export function createApp(options: AppOptions) {
 
   app.get("/api/me", (_req, res) => res.json(currentUser(res)));
   app.get("/api/taxonomy", (_req, res) => res.json({ tags: taxonomies("tags"), categories: taxonomies("categories") }));
+  app.get("/api/cookidoo", (_req, res) => res.json({ configured: Boolean(cookidoo) }));
+  app.post("/api/recipes/:id/cookidoo", async (req, res) => {
+    if (!cookidoo) throw new HttpError(503, "Cookidoo is not configured. Ask an administrator to configure the session.");
+    const recipe = findRecipe(z.string().parse(req.params.id));
+    const { day } = cookidooDay.parse(req.body);
+    if (recipe.title.length > 120) throw new HttpError(400, "Cookidoo recipe titles must be at most 120 characters.");
+    await cookidoo.check().catch((error: unknown) => {
+      if (error instanceof CookidooError) throw new HttpError(502, error.message);
+      throw error;
+    });
+    findRecipe(recipe.id);
+    const existing = db.prepare("SELECT remote_id, state, scheduled_day FROM cookidoo_exports WHERE recipe_id = ?").get(recipe.id) as CookidooExport | undefined;
+    if (existing && existing.state !== "ready") throw new HttpError(409, "A Cookidoo operation needs administrator review before retrying. Check the created recipe and calendar in Cookidoo.");
+    if (existing?.scheduled_day === day) throw new HttpError(409, "This recipe was already sent to Cookidoo for this date. Check Cookidoo before scheduling it again.");
+    const locked = db.prepare("INSERT INTO cookidoo_exports (recipe_id, remote_id, state, scheduled_day) VALUES (?, NULL, 'working', NULL) ON CONFLICT(recipe_id) DO UPDATE SET state='working' WHERE state='ready'").run(recipe.id);
+    if (!locked.changes) throw new HttpError(409, "Another Cookidoo operation is already in progress or needs review.");
+    cookidooInFlight.add(recipe.id);
+    let remoteId = existing?.remote_id ?? null;
+    try {
+      if (!remoteId) {
+        remoteId = await cookidoo.create(recipe.title);
+        db.prepare("UPDATE cookidoo_exports SET remote_id = ? WHERE recipe_id = ?").run(remoteId, recipe.id);
+      }
+      await cookidoo.update(remoteId, recipe);
+      await cookidoo.schedule(remoteId, day);
+      db.prepare("UPDATE cookidoo_exports SET state = 'ready', scheduled_day = ? WHERE recipe_id = ?").run(day, recipe.id);
+      res.json({ day, remoteId });
+    } catch (error) {
+      const needsReview = !(error instanceof CookidooError) || error.uncertain;
+      if (!remoteId && !needsReview) db.prepare("DELETE FROM cookidoo_exports WHERE recipe_id = ?").run(recipe.id);
+      else db.prepare("UPDATE cookidoo_exports SET state = ? WHERE recipe_id = ?").run(needsReview ? "attention" : "ready", recipe.id);
+      if (error instanceof CookidooError) {
+        throw new HttpError(502, `${error.message}${needsReview ? " The result is uncertain; an administrator must review Cookidoo before retrying." : " Check Cookidoo before retrying."}`);
+      }
+      throw error;
+    } finally {
+      cookidooInFlight.delete(recipe.id);
+    }
+  });
+  app.post("/api/admin/cookidoo/recipes/:id/reset", requireAdmin, (req, res) => {
+    const recipe = findRecipe(z.string().parse(req.params.id));
+    const { forget } = z.object({ forget: z.boolean() }).parse(req.body);
+    if (cookidooInFlight.has(recipe.id)) throw new HttpError(409, "Wait for the Cookidoo operation to finish before resetting its link.");
+    const state = db.prepare("SELECT remote_id, state, scheduled_day FROM cookidoo_exports WHERE recipe_id = ?").get(recipe.id) as CookidooExport | undefined;
+    if (!state) throw new HttpError(404, "No Cookidoo link to review");
+    if (forget || !state.remote_id) db.prepare("DELETE FROM cookidoo_exports WHERE recipe_id = ?").run(recipe.id);
+    else db.prepare("UPDATE cookidoo_exports SET state='ready', scheduled_day=NULL WHERE recipe_id = ?").run(recipe.id);
+    res.json(detail(recipe, currentUser(res)));
+  });
+  app.post("/api/admin/cookidoo/recipes/:id/link", requireAdmin, async (req, res) => {
+    if (!cookidoo) throw new HttpError(503, "Cookidoo is not configured.");
+    const recipe = findRecipe(z.string().parse(req.params.id));
+    const { remoteId } = z.object({ remoteId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/) }).parse(req.body);
+    if (cookidooInFlight.has(recipe.id)) throw new HttpError(409, "Wait for the Cookidoo operation to finish.");
+    const state = db.prepare("SELECT remote_id, state, scheduled_day FROM cookidoo_exports WHERE recipe_id = ?").get(recipe.id) as CookidooExport | undefined;
+    if (!state || state.remote_id || state.state === "ready") throw new HttpError(409, "Only an unresolved creation can be linked.");
+    try { await cookidoo.verifyRecipe(remoteId, recipe.title); }
+    catch (error) {
+      if (error instanceof CookidooError) throw new HttpError(502, error.message);
+      throw error;
+    }
+    if (cookidooInFlight.has(recipe.id)) throw new HttpError(409, "A Cookidoo operation is in progress.");
+    const linked = db.prepare("UPDATE cookidoo_exports SET remote_id=?, state='ready', scheduled_day=NULL WHERE recipe_id=? AND remote_id IS NULL AND state IN ('working','attention')").run(remoteId, recipe.id);
+    if (!linked.changes) throw new HttpError(409, "The Cookidoo link changed while it was being verified.");
+    res.json(detail(recipe, currentUser(res)));
+  });
   app.get("/api/recipes", (_req, res) => {
     const recipes = db.prepare("SELECT * FROM recipes ORDER BY updated_at DESC").all() as Recipe[];
     res.json(recipes.map((recipe) => detail(recipe, currentUser(res))));
@@ -150,6 +233,7 @@ export function createApp(options: AppOptions) {
   app.delete("/api/recipes/:id", (req, res) => {
     const recipe = findRecipe(req.params.id);
     checkOwner(recipe, currentUser(res));
+    if (cookidooInFlight.has(recipe.id)) throw new HttpError(409, "Wait for the Cookidoo operation to finish before deleting this recipe.");
     const images = db.prepare("SELECT * FROM images WHERE recipe_id = ?").all(recipe.id) as Image[];
     db.prepare("DELETE FROM recipes WHERE id = ?").run(recipe.id);
     images.forEach(unlinkImage);

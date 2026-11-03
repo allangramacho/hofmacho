@@ -1,5 +1,5 @@
 name: Family Recipes
-version: "0.1.1"
+version: "0.2.0"
 slug: family_recipes
 description: A private recipe collection for Home Assistant users.
 arch:
@@ -13,5 +13,7 @@ panel_title: Family Recipes
 panel_admin: false
 options:
   initial_admin_id: null
+  cookidoo_cookie: null
 schema:
   initial_admin_id: str(1,128)
+  cookidoo_cookie: password?

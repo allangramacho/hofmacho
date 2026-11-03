@@ -31,6 +31,25 @@ Add a recipe with ingredients and instructions, then open it to add photos. JPEG
 
 **Sharing limitation:** All viewing requires an allowed Home Assistant account. Cross-user links are not yet available because Home Assistant ingress paths can contain session-specific values. Do not copy or share the raw ingress URL. Anonymous public access is not available.
 
+## Experimental Cookidoo connection (Belgium, TM6)
+
+This feature uses unofficial Cookidoo web interfaces; it is not supported by Vorwerk and may stop working. It has not yet been verified against a real Belgian account or TM6. A Cookidoo subscription may be required for created recipes.
+
+An app administrator can configure one **shared** Cookidoo account. Every allowed Family Recipes user can send recipes to it and change the linked Cookidoo recipe and calendar. Only give app access to people you trust with that account.
+
+1. On a private computer, sign into the intended account at `https://cookidoo.be` using Dutch (Belgium). Verify that you can open Created Recipes.
+2. In your browser's developer tools, open the Network panel and select a request sent to `cookidoo.be` while opening Created Recipes. In its request headers, locate the `Cookie` header. Copy only its value, not other headers or cookies for other sites. Depending on the session it can contain several name/value pairs such as `_oauth2_proxy=…; v-authenticated=…`.
+3. In Home Assistant, open **Settings > Apps > Family Recipes > Configuration**. Set `cookidoo_cookie` to the copied cookie-header value, save, and restart the app. Do not paste it into a chat, source file, issue, or log. It gives access to your Cookidoo account.
+4. Open a Family Recipes recipe, check its ingredients and instructions, then choose **Send to Cookidoo for today**. The app uses the date on the device running the browser. Confirm that the recipe appears in Cookidoo's created recipes and today's calendar, and then check it on the TM6.
+
+If Cookidoo redirects or rejects the session, sign in again and replace the cookie. The browser session can expire, and the precise required cookies or Belgian endpoint behavior may change. The cookie is stored in Home Assistant's app configuration, not the recipe database; Home Assistant administrators and backups containing app configuration may have access to it. Protect backups and remove the configuration value to disconnect the app. Never put passwords or cookies in this repository.
+
+Each non-empty ingredient line and instruction line is sent as a separate item. Titles over 120 characters cannot be sent. The TM6 is selected, but the app sends **text-only steps**: it does not create machine settings or automatically set time, temperature, speed, or direction. Manually check the instructions and operate the appliance. Recipe descriptions, photos, tags, comments, and likes are not sent. Verify that your own recipes are appropriate and safe for the TM6; the app does not convert them.
+
+The first send creates a Cookidoo created recipe. Subsequent sends for a different date update that linked recipe's name, ingredients, instructions, and model, replacing changes made to those fields directly in Cookidoo. Other fields are not intentionally changed. A second send for the same date is blocked to reduce duplicates; after checking the calendar, an administrator can choose **Allow scheduling again**. Deleting a Family Recipes recipe does **not** delete its Cookidoo copy. If you connect a different Cookidoo account, an administrator must forget each existing link before sending it to the new account.
+
+Cookidoo does not provide an established idempotency guarantee. If a request times out, is interrupted, or returns an unconfirmable response, the app blocks further sends for that recipe. Open Cookidoo and check both Created Recipes and the date's calendar before an app administrator selects **Review complete: allow retry**. If the creation result was uncertain and a matching recipe already exists, use **Link existing Cookidoo recipe** and enter its ID from its Cookidoo URL; the app checks that the ID and title match before linking it. If no recipe was created, the administrator can allow a retry. If the calendar already contains the recipe, do not retry without first resolving the existing entry in Cookidoo. **Forget Cookidoo link** removes only the local link; sending again creates a new copy and can create duplicates. An interrupted operation after an app restart also requires review.
+
 ## Backups and recovery
 
 Recipes, users, permissions, likes and comments are stored in `/data/recipes.db`; photos are stored in `/data/images`. Keep them together.
@@ -42,4 +61,5 @@ For a consistent backup, stop Family Recipes, create a Home Assistant backup tha
 - **Access denied:** Check the Home Assistant account's ID in the app allowlist. The user must access the app through Home Assistant ingress, not a direct container address. If Home Assistant does not provide an identity header, access is denied and this must be investigated in Home Assistant.
 - **Initial admin cannot enter:** Verify `initial_admin_id` is the account's ID, save the configuration and restart the app. It is not the username `hofmacho`.
 - **App does not start or an image fails:** Inspect the app's Log tab. Missing configuration, invalid images, storage errors, and unexpected server errors are reported there or in the UI.
+- **Cookidoo fails:** Check the session and Belgian locale as described above. If an operation needs review, do not retry blindly; inspect Cookidoo first. A successful test in Family Recipes does not establish that guided cooking works on the appliance.
 - **Back up before updating:** Stop the app and back it up before installing an update. The database schema is versioned; newer unsupported schema versions fail to start rather than being silently overwritten.
