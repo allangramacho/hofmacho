@@ -7,13 +7,15 @@ import { DatabaseSync } from "node:sqlite";
 import sharp from "sharp";
 import { z, ZodError } from "zod";
 import { CookidooError, createCookidoo } from "./cookidoo.js";
+import { createRecipeImporter, RecipeImportError, type ImportedRecipe } from "./recipe-import.js";
+import { createGemini, GeminiError } from "./gemini.js";
 
 type User = { id: string; name: string; role: "admin" | "member"; enabled: number };
 type Recipe = { id: string; owner_id: string; title: string; description: string; ingredients: string; instructions: string; created_at: string; updated_at: string };
 type Image = { id: string; recipe_id: string; filename: string; is_cover: number };
 type Taxonomy = { id: string; name: string };
 type Comment = { id: string; recipe_id: string; author_id: string; text: string; created_at: string; author: string };
-type AppOptions = { dataDir: string; initialAdminId: string; trustedAddress?: string; staticDir?: string; cookidooCookie?: string; cookidooFetch?: typeof fetch };
+type AppOptions = { dataDir: string; initialAdminId: string; trustedAddress?: string; staticDir?: string; cookidooCookie?: string; cookidooFetch?: typeof fetch; recipeImporter?: (url: string) => Promise<ImportedRecipe>; geminiApiKey?: string; geminiFetch?: typeof fetch };
 type CookidooExport = { remote_id: string | null; state: "working" | "ready" | "attention"; scheduled_day: string | null };
 
 const userId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
@@ -73,6 +75,8 @@ export function createApp(options: AppOptions) {
 
   const app = express();
   const cookidoo = options.cookidooCookie ? createCookidoo(options.cookidooCookie, options.cookidooFetch) : undefined;
+  const importRecipe = options.recipeImporter ?? createRecipeImporter();
+  const importPhoto = options.geminiApiKey ? createGemini(options.geminiApiKey, options.geminiFetch) : undefined;
   const cookidooInFlight = new Set<string>();
   app.disable("x-powered-by");
   app.use((req, res, next) => {
@@ -140,6 +144,11 @@ export function createApp(options: AppOptions) {
   app.get("/api/me", (_req, res) => res.json(currentUser(res)));
   app.get("/api/taxonomy", (_req, res) => res.json({ tags: taxonomies("tags"), categories: taxonomies("categories") }));
   app.get("/api/cookidoo", (_req, res) => res.json({ configured: Boolean(cookidoo) }));
+  app.get("/api/photo-import", (_req, res) => res.json({ configured: Boolean(importPhoto) }));
+  app.post("/api/recipe-import", async (req, res) => {
+    const { url } = z.object({ url: z.string().trim().min(1).max(2048) }).parse(req.body);
+    res.json(await importRecipe(url));
+  });
   app.post("/api/recipes/:id/cookidoo", async (req, res) => {
     if (!cookidoo) throw new HttpError(503, "Cookidoo is not configured. Ask an administrator to configure the session.");
     const recipe = findRecipe(z.string().parse(req.params.id));
@@ -268,6 +277,21 @@ export function createApp(options: AppOptions) {
   });
 
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
+  app.post("/api/photo-import", upload.single("image"), async (req, res) => {
+    if (!importPhoto) throw new HttpError(503, "Photo import is not configured. Ask an administrator to add a Gemini API key.");
+    if (!req.file) throw new HttpError(400, "Select a recipe photo");
+    const metadata = await sharp(req.file.buffer, { limitInputPixels: 40000000 }).metadata().catch(() => { throw new HttpError(400, "Invalid image"); });
+    if (!metadata.format || !["jpeg", "png", "webp"].includes(metadata.format) || (metadata.pages ?? 1) !== 1) {
+      throw new HttpError(400, "Only single-frame JPEG, PNG and WebP images are supported");
+    }
+    const image = await sharp(req.file.buffer, { limitInputPixels: 40000000 }).rotate()
+      .resize({ width: 3200, height: 3200, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 90 }).toBuffer()
+      .catch(() => { throw new HttpError(400, "The image could not be decoded"); });
+    if (image.length > 10 * 1024 * 1024) throw new HttpError(400, "The processed image is too large to import");
+    const activeUser = db.prepare("SELECT enabled FROM users WHERE id = ?").get(currentUser(res).id) as { enabled: number } | undefined;
+    if (!activeUser?.enabled) throw new HttpError(403, "Your access has been revoked");
+    res.json(await importPhoto(image));
+  });
   app.post("/api/recipes/:id/images", upload.single("image"), async (req, res) => {
     const recipe = findRecipe(z.string().parse(req.params.id));
     checkOwner(recipe, currentUser(res));
@@ -347,6 +371,8 @@ export function createApp(options: AppOptions) {
   const errors: ErrorRequestHandler = (error: unknown, _req, res, _next) => {
     if (error instanceof ZodError) return res.status(400).json({ error: error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ") });
     if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });
+    if (error instanceof RecipeImportError) return res.status(error.status).json({ error: error.message });
+    if (error instanceof GeminiError) return res.status(error.status).json({ error: error.message });
     if (error instanceof multer.MulterError) return res.status(400).json({ error: error.message });
     if (error instanceof Error && "type" in error && error.type === "entity.parse.failed") return res.status(400).json({ error: "Invalid JSON" });
     if (error instanceof Error && "type" in error && error.type === "entity.too.large") return res.status(413).json({ error: "Request body is too large" });

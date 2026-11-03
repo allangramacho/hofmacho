@@ -39,6 +39,8 @@ function App() {
   const [screen, setScreen] = useState<"list" | "view" | "edit" | "admin">("list");
   const [selected, setSelected] = useState<Recipe | null>(null);
   const [form, setForm] = useState<RecipeForm>(emptyForm);
+  const [importUrl, setImportUrl] = useState("");
+  const [importPhoto, setImportPhoto] = useState<File | null>(null);
   const [query, setQuery] = useState("");
   const [tagFilter, setTagFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -46,13 +48,15 @@ function App() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [cookidooConfigured, setCookidooConfigured] = useState(false);
+  const [photoImportConfigured, setPhotoImportConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
   const refresh = async () => {
-    const [me, all, groups, cookidoo] = await Promise.all([api<User>("me"), api<Recipe[]>("recipes"), api<Data>("taxonomy"), api<{ configured: boolean }>("cookidoo")]);
+    const [me, all, groups, cookidoo, photoImport] = await Promise.all([api<User>("me"), api<Recipe[]>("recipes"), api<Data>("taxonomy"), api<{ configured: boolean }>("cookidoo"), api<{ configured: boolean }>("photo-import")]);
     setUser(me); setRecipes(all); setTaxonomy(groups);
     setCookidooConfigured(cookidoo.configured);
+    setPhotoImportConfigured(photoImport.configured);
     if (me.role === "admin") setUsers(await api<User[]>("admin/users"));
   };
   const run = async (action: () => Promise<void>) => {
@@ -68,6 +72,8 @@ function App() {
   };
   const showEdit = (recipe?: Recipe) => {
     setSelected(recipe ?? null);
+    setImportUrl("");
+    setImportPhoto(null);
     setForm(recipe ? { title: recipe.title, description: recipe.description, ingredients: recipe.ingredients, instructions: recipe.instructions, tags: recipe.tags.map((x) => x.id), categories: recipe.categories.map((x) => x.id) } : emptyForm());
     setScreen("edit");
   };
@@ -100,8 +106,8 @@ function App() {
 
   return <div className="shell">
     <header className="topbar">
-      <button className="brand" onClick={() => setScreen("list")}><span>✿</span> Family Recipes</button>
-      <nav><button onClick={() => setScreen("list")}>Recipes</button>{user?.role === "admin" && <button onClick={() => setScreen("admin")}>Admin</button>}</nav>
+      <button className="brand" disabled={busy} onClick={() => setScreen("list")}><span>✿</span> Family Recipes</button>
+      <nav><button disabled={busy} onClick={() => setScreen("list")}>Recipes</button>{user?.role === "admin" && <button disabled={busy} onClick={() => setScreen("admin")}>Admin</button>}</nav>
       {user && <span className="identity">{user.name}</span>}
     </header>
     <main>
@@ -180,13 +186,44 @@ function App() {
             <form onSubmit={(event) => { event.preventDefault(); void run(async () => { await updateRecipe(`recipes/${selected.id}/comments`, "POST", { text: comment }); setComment(""); }); }}><label>Add a comment<textarea required maxLength={4000} value={comment} onChange={(e) => setComment(e.target.value)} /></label><button className="primary" disabled={busy}>Post comment</button></form>
           </section>
         </>}
-        {screen === "edit" && <><button className="back" onClick={() => setScreen(selected ? "view" : "list")}>← Cancel</button><div className="section-heading"><h1>{selected ? "Edit recipe" : "Add a recipe"}</h1></div>
+        {screen === "edit" && <><button className="back" disabled={busy} onClick={() => setScreen(selected ? "view" : "list")}>← Cancel</button><div className="section-heading"><h1>{selected ? "Edit recipe" : "Add a recipe"}</h1></div>
+          {!selected && <form className="panel editor" onSubmit={(event) => {
+            event.preventDefault();
+            if ((form.title || form.description || form.ingredients || form.instructions) &&
+                !window.confirm("Replace the current recipe text with the imported recipe?")) return;
+            void run(async () => {
+              const imported = await api<Pick<RecipeForm, "title" | "description" | "ingredients" | "instructions">>("recipe-import", "POST", { url: importUrl });
+              setForm((old) => ({ ...old, ...imported }));
+              setNotice("Recipe imported. Review and complete the fields before saving.");
+            });
+          }}>
+            <label>Import from a recipe URL<input type="url" required disabled={busy} maxLength={2048} placeholder="https://example.com/recipe" value={importUrl} onChange={(event) => setImportUrl(event.target.value)} /></label>
+            <small>Works with public recipe pages that provide structured recipe data. Photos are not imported.</small>
+            <button type="submit" disabled={busy}>Import recipe</button>
+          </form>}
+          {!selected && <form className="panel editor" onSubmit={(event) => {
+            event.preventDefault();
+            if (!importPhoto) return;
+            if ((form.title || form.description || form.ingredients || form.instructions) &&
+                !window.confirm("Replace the current recipe text with the text extracted from this photo?")) return;
+            void run(async () => {
+              const data = new FormData(); data.append("image", importPhoto);
+              const imported = await api<Pick<RecipeForm, "title" | "description" | "ingredients" | "instructions">>("photo-import", "POST", data);
+              setForm((old) => ({ ...old, ...imported }));
+              setNotice("Photo processed. AI can make mistakes: check quantities, ingredients and instructions before saving.");
+            });
+          }}>
+            <label>Import from a recipe photo<input type="file" accept="image/jpeg,image/png,image/webp" required disabled={busy || !photoImportConfigured} onChange={(event) => setImportPhoto(event.target.files?.[0] ?? null)} /></label>
+            <small>JPEG, PNG or WebP, up to 5 MB. The photo is sent to Google Gemini; free-tier data may be used to improve Google's products. AI can make mistakes, so review the result. The photo is not saved with the recipe.</small>
+            {!photoImportConfigured && <small>Ask an administrator to configure a Gemini API key in Home Assistant.</small>}
+            <button type="submit" disabled={busy || !photoImportConfigured || !importPhoto}>Send to Google and import</button>
+          </form>}
           <form className="panel editor" onSubmit={(event) => void save(event)}>
-            <label>Recipe title<input required maxLength={160} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label>
-            <label>Description<textarea maxLength={4000} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
-            <label>Ingredients <small>One per line</small><textarea required rows={8} maxLength={20000} value={form.ingredients} onChange={(e) => setForm({ ...form, ingredients: e.target.value })} /></label>
-            <label>Instructions <small>For Cookidoo, put each step on a separate line.</small><textarea required rows={10} maxLength={30000} value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} /></label>
-            {(["categories", "tags"] as const).map((kind) => <fieldset key={kind}><legend>{kind === "categories" ? "Categories" : "Tags"}</legend><div className="check-list">{taxonomy[kind].length ? taxonomy[kind].map((item) => <label key={item.id}><input type="checkbox" checked={form[kind].includes(item.id)} onChange={() => changeSelection(kind, item.id)} /> {item.name}</label>) : <small>An administrator can add {kind}.</small>}</div></fieldset>)}
+            <label>Recipe title<input required disabled={busy} maxLength={160} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label>
+            <label>Description<textarea disabled={busy} maxLength={4000} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
+            <label>Ingredients <small>One per line</small><textarea required disabled={busy} rows={8} maxLength={20000} value={form.ingredients} onChange={(e) => setForm({ ...form, ingredients: e.target.value })} /></label>
+            <label>Instructions <small>For Cookidoo, put each step on a separate line.</small><textarea required disabled={busy} rows={10} maxLength={30000} value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} /></label>
+            {(["categories", "tags"] as const).map((kind) => <fieldset key={kind} disabled={busy}><legend>{kind === "categories" ? "Categories" : "Tags"}</legend><div className="check-list">{taxonomy[kind].length ? taxonomy[kind].map((item) => <label key={item.id}><input type="checkbox" checked={form[kind].includes(item.id)} onChange={() => changeSelection(kind, item.id)} /> {item.name}</label>) : <small>An administrator can add {kind}.</small>}</div></fieldset>)}
             <button className="primary" disabled={busy}>Save recipe</button>
           </form>
         </>}

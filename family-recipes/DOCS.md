@@ -29,6 +29,16 @@ The app's admin page only controls access to Family Recipes; create, disable, or
 
 Add a recipe with ingredients and instructions, then open it to add photos. JPEG, PNG and WebP files are accepted, up to 5 MB each and five photos per recipe; images are converted to WebP. The owner and app admins can edit recipes and manage their photos. Every allowed user can view every recipe, like it and comment; a comment's author and admins can edit or remove it. Only app admins manage categories and tags. Deleting a category or tag removes it from recipes but does not delete the recipes.
 
+To import a recipe, choose **Add recipe**, paste a public recipe-page URL, and select **Import recipe**. The app extracts the title, description, ingredients and instructions from schema.org Recipe JSON-LD when available. Review and complete the fields before saving; the import does not save automatically, import photos, or assign categories and tags. Sites that require a login, block automated access, or do not provide this structured data may not work. Only public HTTP(S) addresses on standard ports are supported; the app contacts the website directly, so the website can see its IP address. Do not include passwords, tokens, or other sensitive information in URLs. Import only content you have permission to use.
+
+### Importing a recipe photo with Gemini
+
+1. An administrator can create a Gemini API key in [Google AI Studio](https://aistudio.google.com/apikey). Review Google's [pricing](https://ai.google.dev/gemini-api/docs/pricing), [rate limits](https://ai.google.dev/gemini-api/docs/rate-limits), and [terms](https://ai.google.dev/gemini-api/terms) for the project's location and billing status. The app uses `gemini-3.8-flash`, which has a free tier where available; quotas and availability can change, and paid projects can incur charges. The app does not enforce a spending limit.
+2. In **Settings > Apps > Family Recipes > Configuration**, set `gemini_api_key`, save, and restart the app. Do not put the key in chat, source files, or logs. Home Assistant administrators and backups containing app configuration may access it; remove the value and restart to disable photo import.
+3. Choose **Add recipe**, select a single JPEG, PNG or WebP recipe photo (up to 5 MB), and choose **Send to Google and import**. The app sends a processed copy to Gemini and fills the form; it does not save the photo or recipe automatically. To attach a photo to a saved recipe, use **Add photo** separately.
+
+All allowed users can use the shared Gemini key and quota. Google receives the image and prompt; free-tier content may be used to improve its products under Google's terms. Only upload images you have permission to use and are comfortable sharing with Google. AI can misread or invent information, especially quantities, units and cooking instructions: check every field against the photo and complete missing details before saving or cooking.
+
 **Sharing limitation:** All viewing requires an allowed Home Assistant account. Cross-user links are not yet available because Home Assistant ingress paths can contain session-specific values. Do not copy or share the raw ingress URL. Anonymous public access is not available.
 
 ## Experimental Cookidoo connection (Belgium, TM6)

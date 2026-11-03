@@ -30,6 +30,29 @@ beforeEach(() => {
 afterEach(() => { service.close(); rmSync(dir, { recursive: true, force: true }); });
 
 describe("Home Assistant access", () => {
+  it("requires authentication and request verification for URL imports", async () => {
+    expect((await request(service.app).post("/api/recipe-import").send({ url: "http://127.0.0.1" })).status).toBe(401);
+    expect((await request(service.app).post("/api/recipe-import").set("X-Remote-User-Id", admin).send({ url: "http://127.0.0.1" })).status).toBe(403);
+    expect((await request(service.app).post("/api/recipe-import").set(auth(admin)).send({ url: "http://127.0.0.1" })).status).toBe(400);
+    expect((await request(service.app).post("/api/recipe-import").set(auth(admin)).send({ url: "" })).status).toBe(400);
+    expect((await request(service.app).get("/api/recipes").set(auth(admin))).body).toHaveLength(0);
+  });
+  it("returns imported fields without saving a recipe", async () => {
+    const imported = { title: "Soup", description: "", ingredients: "Carrot", instructions: "Cook" };
+    const importer = createApp({
+      dataDir: path.join(dir, "import-test"), initialAdminId: admin, trustedAddress: "127.0.0.1",
+      recipeImporter: async (url) => {
+        expect(url).toBe("https://example.com/recipe");
+        return imported;
+      },
+    });
+    try {
+      const response = await request(importer.app).post("/api/recipe-import").set(auth(admin)).send({ url: "https://example.com/recipe" });
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(imported);
+      expect((await request(importer.app).get("/api/recipes").set(auth(admin))).body).toHaveLength(0);
+    } finally { importer.close(); }
+  });
   it("rejects untrusted connections, missing identity and non-allowlisted users", async () => {
     const untrustedDir = mkdtempSync(path.join(tmpdir(), "family-recipes-untrusted-"));
     const untrusted = createApp({ dataDir: untrustedDir, initialAdminId: admin });

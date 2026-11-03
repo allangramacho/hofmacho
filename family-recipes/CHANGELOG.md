@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Import recipe text from public recipe pages with schema.org JSON-LD, with review before saving.
+- Optionally extract recipes from photos using a shared Gemini API key, with review before saving.
+
 ## 0.2.0
 
 - Add an experimental shared Cookidoo Belgium connection for sending text-only TM6 recipes to today's calendar, with administrator review of uncertain operations.
