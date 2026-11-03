@@ -1,0 +1,17 @@
+name: Family Recipes
+version: "0.1.0"
+slug: family_recipes
+description: A private recipe collection for Home Assistant users.
+arch:
+  - amd64
+init: false
+ingress: true
+ingress_port: 8099
+ingress_stream: true
+panel_icon: mdi:book-open-variant
+panel_title: Family Recipes
+panel_admin: false
+options:
+  initial_admin_id: "REDACTED"
+schema:
+  initial_admin_id: str(1,128)
