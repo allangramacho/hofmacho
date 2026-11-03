@@ -24,6 +24,29 @@ describe("recipe import", () => {
       ingredients: "200g pasta\nTomato & basil", instructions: "Boil the pasta.\nServe warm.",
     });
   });
+  it("decodes double-escaped HTML entities in recipe fields without losing literal text", () => {
+    const page = `<script type="application/ld+json">${JSON.stringify({
+      "@type": "Recipe", name: "P&amp;atilde;o",
+      description: "<p>N&amp;atilde;o h&amp;aacute; d&amp;uacute;vida &amp;mdash; 2 &lt; 3.</p>",
+      recipeIngredient: ["1 xícara de água", "Sal &amp; pimenta"],
+      recipeInstructions: [{ "@type": "HowToStep", text: "Ferva a &amp;aacute;gua at&amp;eacute; ferver." }],
+    })}</script>`;
+    expect(extractRecipe(page)).toEqual({
+      title: "Pão",
+      description: "Não há dúvida — 2 < 3.",
+      ingredients: "1 xícara de água\nSal & pimenta",
+      instructions: "Ferva a água até ferver.",
+    });
+  });
+  it("imports JSON-LD with an unescaped newline inside a recipe text field", () => {
+    const data = JSON.stringify({
+      "@type": "Recipe", name: "Soup", description: "First line\nSecond line",
+      recipeIngredient: ["Carrot"], recipeInstructions: [{ "@type": "HowToStep", text: "Cook\nServe" }],
+    }).replaceAll("\\n", "\n");
+    expect(extractRecipe(`<script type="application/ld+json">${data}</script>`)).toEqual({
+      title: "Soup", description: "First line\nSecond line", ingredients: "Carrot", instructions: "Cook\nServe",
+    });
+  });
   it("leaves missing fields editable and rejects missing or oversized recipes", () => {
     expect(extractRecipe('<script type="application/ld+json">{"@type":"Recipe","name":"Toast"}</script>'))
       .toEqual({ title: "Toast", description: "", ingredients: "", instructions: "" });

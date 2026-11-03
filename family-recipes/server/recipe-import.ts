@@ -4,6 +4,7 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import * as cheerio from "cheerio";
+import { decodeHTMLStrict } from "entities";
 import ipaddr from "ipaddr.js";
 
 export type ImportedRecipe = { title: string; description: string; ingredients: string; instructions: string };
@@ -79,7 +80,7 @@ function download(url: URL, address: LookupAddress, signal: AbortSignal): Promis
 
 function text(value: unknown): string {
   if (typeof value !== "string") return "";
-  return cheerio.load(value, {}, false).text().replace(/\r\n?/g, "\n").trim();
+  return decodeHTMLStrict(cheerio.load(value, {}, false).text()).replace(/\r\n?/g, "\n").trim();
 }
 
 function instructions(value: unknown): string[] {
@@ -101,12 +102,29 @@ function findRecipes(value: unknown, depth = 0): Record<string, unknown>[] {
   return [...(matches ? [object] : []), ...Object.values(object).flatMap((item) => findRecipes(item, depth + 1))];
 }
 
+function escapeJsonLineBreaks(source: string): string {
+  let insideString = false;
+  let escaped = false;
+  let result = "";
+  for (const char of source) {
+    if (insideString && !escaped && (char === "\n" || char === "\r")) {
+      result += char === "\n" ? "\\n" : "\\r";
+      continue;
+    }
+    result += char;
+    if (escaped) { escaped = false; continue; }
+    if (insideString && char === "\\") { escaped = true; continue; }
+    if (char === '"') insideString = !insideString;
+  }
+  return result;
+}
+
 export function extractRecipe(html: string): ImportedRecipe {
   const $ = cheerio.load(html);
   const recipes: Record<string, unknown>[] = [];
   $("script[type]").each((_index, element) => {
     if ($(element).attr("type")?.split(";")[0].trim().toLowerCase() !== "application/ld+json") return;
-    try { recipes.push(...findRecipes(JSON.parse($(element).html() ?? ""))); }
+    try { recipes.push(...findRecipes(JSON.parse(escapeJsonLineBreaks($(element).html() ?? "")))); }
     catch (error) {
       if (!(error instanceof SyntaxError)) throw error;
     }

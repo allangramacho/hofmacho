@@ -65,6 +65,7 @@ function App() {
     finally { setBusy(false); }
   };
   useEffect(() => { void run(async () => { try { await refresh(); } finally { setLoading(false); } }); }, []);
+  useEffect(() => { if (screen === "list") setNotice(""); }, [screen]);
 
   const open = async (id: string) => {
     const recipe = await api<Recipe>(`recipes/${id}`);
@@ -112,7 +113,7 @@ function App() {
     </header>
     <main>
       {error && <div className="alert" role="alert">{error}<button onClick={() => setError("")} aria-label="Dismiss error">×</button></div>}
-      {notice && <div className="panel" role="status">{notice}</div>}
+      {notice && screen !== "list" && <div className="panel" role="status">{notice}</div>}
       {loading ? <p>Loading recipes…</p> : !user ? <div className="empty"><h1>Access unavailable</h1><p>Open this app through Home Assistant and ask an app administrator for access.</p></div> : <>
         {screen === "list" && <>
           <section className="hero"><div><p className="eyebrow">YOUR FAMILY COOKBOOK</p><h1>Good food, shared together.</h1><p>Keep your favorite recipes close, from everyday meals to family classics.</p></div><button className="primary" onClick={() => showEdit()}>+ Add recipe</button></section>
@@ -214,7 +215,7 @@ function App() {
             });
           }}>
             <label>Import from a recipe photo<input type="file" accept="image/jpeg,image/png,image/webp" required disabled={busy || !photoImportConfigured} onChange={(event) => setImportPhoto(event.target.files?.[0] ?? null)} /></label>
-            <small>JPEG, PNG or WebP, up to 5 MB. The photo is sent to Google Gemini; free-tier data may be used to improve Google's products. AI can make mistakes, so review the result. The photo is not saved with the recipe.</small>
+            <small>JPEG, PNG or WebP, up to 5 MB. The photo is sent to Google Gemini; free-tier data may be used to improve Google's products. If Gemini is unavailable, the photo may be sent again automatically, using additional quota. AI can make mistakes, so review the result. The photo is not saved with the recipe.</small>
             {!photoImportConfigured && <small>Ask an administrator to configure a Gemini API key in Home Assistant.</small>}
             <button type="submit" disabled={busy || !photoImportConfigured || !importPhoto}>Send to Google and import</button>
           </form>}

@@ -5,6 +5,7 @@ import path from "node:path";
 import request from "supertest";
 import sharp from "sharp";
 import { createApp } from "../server/app.js";
+import { createGemini } from "../server/gemini.js";
 
 const auth = { "X-Remote-User-Id": "admin", "X-Family-Recipes": "1" };
 const recipe = { isRecipe: true, title: "Soup", description: "", ingredients: "2 carrots", instructions: "Cook." };
@@ -27,6 +28,35 @@ beforeEach(async () => {
 afterEach(() => { service.close(); rmSync(dir, { recursive: true, force: true }); });
 
 describe("Gemini photo import", () => {
+  it("retries a transient Gemini 503 and returns the recipe when the service recovers", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("", { status: 503 }))
+      .mockResolvedValueOnce(success());
+    const wait = vi.fn(async (_ms: number, _signal: AbortSignal) => {});
+    await expect(createGemini("test-key", fetcher, wait)(Buffer.from("photo"))).resolves.toEqual({
+      title: "Soup", description: "", ingredients: "2 carrots", instructions: "Cook.",
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(wait.mock.calls.map(([ms]) => ms)).toEqual([1000]);
+  });
+  it("bounds retries for persistent 503s and reports that Gemini is unavailable", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response("", { status: 503 }));
+    const wait = vi.fn(async (_ms: number, _signal: AbortSignal) => {});
+    await expect(createGemini("test-key", fetcher, wait)(Buffer.from("photo"))).rejects.toMatchObject({
+      status: 503, message: expect.stringContaining("temporarily unavailable"),
+    });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(wait.mock.calls.map(([ms]) => ms)).toEqual([1000, 2000]);
+  });
+  it("does not retry a rejected key or quota response", async () => {
+    const wait = vi.fn(async (_ms: number, _signal: AbortSignal) => {});
+    for (const status of [403, 429]) {
+      const fetcher = vi.fn<typeof fetch>(async () => new Response("", { status }));
+      await expect(createGemini("test-key", fetcher, wait)(Buffer.from("photo"))).rejects.toThrow();
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    }
+    expect(wait).not.toHaveBeenCalled();
+  });
   it("reports configuration and sends only a processed photo to Gemini without saving", async () => {
     expect((await request(service.app).get("/api/photo-import").set(auth)).body).toEqual({ configured: true });
     const result = await request(service.app).post("/api/photo-import").set(auth).attach("image", image, "recipe.png");
@@ -70,6 +100,13 @@ describe("Gemini photo import", () => {
     expect((await request(service.app).get("/api/photo-import").set(auth)).body).toEqual({ configured: false });
     expect((await request(service.app).post("/api/photo-import").set(auth).attach("image", image, "recipe.png")).status).toBe(503);
     expect(fetchGemini).not.toHaveBeenCalled();
+  });
+  it("reports a persistent Gemini 503 through the photo import endpoint", async () => {
+    reply = async () => new Response("", { status: 503 });
+    const result = await request(service.app).post("/api/photo-import").set(auth).attach("image", image, "recipe.png");
+    expect(result.status).toBe(503);
+    expect(result.body.error).toContain("temporarily unavailable");
+    expect(fetchGemini).toHaveBeenCalledTimes(3);
   });
   it("surfaces quota, key, network and model errors without exposing provider details", async () => {
     const cases: [() => Promise<Response>, number, string][] = [

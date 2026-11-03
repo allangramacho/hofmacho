@@ -39,6 +39,8 @@ To import a recipe, choose **Add recipe**, paste a public recipe-page URL, and s
 
 All allowed users can use the shared Gemini key and quota. Google receives the image and prompt; free-tier content may be used to improve its products under Google's terms. Only upload images you have permission to use and are comfortable sharing with Google. AI can misread or invent information, especially quantities, units and cooking instructions: check every field against the photo and complete missing details before saving or cooking.
 
+If Gemini returns HTTP 503, the app retries twice with short delays, sending the image again; this may use additional quota or incur charges on paid projects. Persistent 503 errors mean the service or model is unavailable for that request, not necessarily that the key is wrong. Try again later and check Google's service status. The app does not automatically retry rejected keys or quota errors.
+
 **Sharing limitation:** All viewing requires an allowed Home Assistant account. Cross-user links are not yet available because Home Assistant ingress paths can contain session-specific values. Do not copy or share the raw ingress URL. Anonymous public access is not available.
 
 ## Experimental Cookidoo connection (Belgium, TM6)

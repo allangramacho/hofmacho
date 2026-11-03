@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Fix double-encoded characters in recipe imports and clear import notices on the recipe list.
+- Retry transient Gemini HTTP 503 errors and report persistent service unavailability clearly.
+
 ## 0.3.0
 
 - Import recipe text from public recipe pages with schema.org JSON-LD, with review before saving.
