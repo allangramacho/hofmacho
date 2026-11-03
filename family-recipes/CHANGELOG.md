@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - Import recipe text from public recipe pages with schema.org JSON-LD, with review before saving.
 - Optionally extract recipes from photos using a shared Gemini API key, with review before saving.
